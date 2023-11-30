@@ -1009,7 +1009,7 @@ def setup_parser() -> argparse.ArgumentParser:
         "--textual_inversion_embedding",
         type=str,
         default=None,
-        nargs="1",
+        nargs=1,
         help="Path to a single Embedding file of Textual Inversion / Textual Inversion のembedding",
     )
     parser.add_argument(
