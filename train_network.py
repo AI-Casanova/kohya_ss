@@ -106,6 +106,9 @@ class NetworkTrainer:
         tokenizer = train_util.load_tokenizer(args)
         return tokenizer
 
+    def load_textual_inversion(self, args, tokenizers, text_encoders):
+        raise NotImplementedError
+
     def is_text_encoder_outputs_cached(self, args):
         return False
 
@@ -229,6 +232,9 @@ class NetworkTrainer:
 
         # text_encoder is List[CLIPTextModel] or CLIPTextModel
         text_encoders = text_encoder if isinstance(text_encoder, list) else [text_encoder]
+
+        if args.textual_inversion_embedding:
+            self.load_textual_inversion(args, tokenizers, text_encoders)
 
         # モデルに xformers とか memory efficient attention を組み込む
         train_util.replace_unet_modules(unet, args.mem_eff_attn, args.xformers, args.sdpa)
@@ -998,6 +1004,19 @@ def setup_parser() -> argparse.ArgumentParser:
         "--no_half_vae",
         action="store_true",
         help="do not use fp16/bf16 VAE in mixed precision (use float VAE) / mixed precisionでも fp16/bf16 VAEを使わずfloat VAEを使う",
+    )
+    parser.add_argument(
+        "--textual_inversion_embedding",
+        type=str,
+        default=None,
+        nargs="1",
+        help="Path to a single Embedding file of Textual Inversion / Textual Inversion のembedding",
+    )
+    parser.add_argument(
+        "--textual_inversion_name",
+        type=str,
+        default=None,
+        help="Optional word to trigger TI other than filename",
     )
     return parser
 

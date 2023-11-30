@@ -1,5 +1,6 @@
 import argparse
 import torch
+import os
 try:
     import intel_extension_for_pytorch as ipex
     if torch.xpu.is_available():
@@ -9,6 +10,7 @@ except Exception:
     pass
 from library import sdxl_model_util, sdxl_train_util, train_util
 import train_network
+import library.model_util as model_util
 
 
 class SdxlNetworkTrainer(train_network.NetworkTrainer):
@@ -52,6 +54,59 @@ class SdxlNetworkTrainer(train_network.NetworkTrainer):
     def load_tokenizer(self, args):
         tokenizer = sdxl_train_util.load_tokenizers(args)
         return tokenizer
+
+    def load_textual_inversion(self, args, tokenizers, text_encoders):
+        if args.textual_inversion_embeddings:
+            token_ids_embeds1 = []
+            token_ids_embeds2 = []
+            for embeds_file in args.textual_inversion_embeddings:
+                if model_util.is_safetensors(embeds_file):
+                    from safetensors.torch import load_file
+                    data = load_file(embeds_file)
+                else:
+                    data = torch.load(embeds_file, map_location="cpu")
+                if "string_to_param" in data:
+                    data = data["string_to_param"]
+                embeds1 = data["clip_l"]  # text encoder 1
+                embeds2 = data["clip_g"]  # text encoder 2
+                num_vectors_per_token = embeds1.size()[0]
+                token_string = args.textual_inversion_name or os.path.splitext(os.path.basename(embeds_file))[0]
+                token_strings = [token_string] + [f"{token_string}{i + 1}" for i in range(num_vectors_per_token - 1)]
+                # add new word to tokenizer, count is num_vectors_per_token
+                num_added_tokens1 = tokenizers[0].add_tokens(token_strings)
+                num_added_tokens2 = tokenizers[1].add_tokens(token_strings)
+                assert num_added_tokens1 == num_vectors_per_token and num_added_tokens2 == num_vectors_per_token, (
+                        f"tokenizer has same word to token string (filename): {embeds_file}"
+                        + f" / 指定した名前（ファイル名）のトークンが既に存在します: {embeds_file}"
+                )
+                token_ids1 = tokenizers[0].convert_tokens_to_ids(token_strings)
+                token_ids2 = tokenizers[1].convert_tokens_to_ids(token_strings)
+                print(
+                    f"Textual Inversion embeddings `{token_string}` loaded. Tokens are added: {token_ids1} and {token_ids2}")
+                assert (
+                        min(token_ids1) == token_ids1[0] and token_ids1[-1] == token_ids1[0] + len(token_ids1) - 1
+                ), f"token ids1 is not ordered"
+                assert (
+                        min(token_ids2) == token_ids2[0] and token_ids2[-1] == token_ids2[0] + len(token_ids2) - 1
+                ), f"token ids2 is not ordered"
+                assert len(tokenizers[0]) - 1 == token_ids1[-1], f"token ids 1 is not end of tokenize: {len(tokenizers[0])}"
+                assert len(tokenizers[1]) - 1 == token_ids2[-1], f"token ids 2 is not end of tokenize: {len(tokenizers[1])}"
+                # replacing with tokenid expansion
+                # if num_vectors_per_token > 1:
+                #     pipe.add_token_replacement(0, token_ids1[0], token_ids1)  # hoge -> hoge, hogea, hogeb, ...
+                #     pipe.add_token_replacement(1, token_ids2[0], token_ids2)
+                token_ids_embeds1.append((token_ids1, embeds1))
+                token_ids_embeds2.append((token_ids2, embeds2))
+            text_encoders[0].resize_token_embeddings(len(tokenizers[0]))
+            text_encoders[1].resize_token_embeddings(len(tokenizers[1]))
+            token_embeds1 = text_encoders[0].get_input_embeddings().weight.data
+            token_embeds2 = text_encoders[1].get_input_embeddings().weight.data
+            for token_ids, embeds in token_ids_embeds1:
+                for token_id, embed in zip(token_ids, embeds):
+                    token_embeds1[token_id] = embed
+            for token_ids, embeds in token_ids_embeds2:
+                for token_id, embed in zip(token_ids, embeds):
+                    token_embeds2[token_id] = embed
 
     def is_text_encoder_outputs_cached(self, args):
         return args.cache_text_encoder_outputs

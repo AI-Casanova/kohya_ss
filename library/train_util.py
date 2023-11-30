@@ -699,6 +699,12 @@ class BaseDataset(torch.utils.data.Dataset):
             caption, padding="max_length", truncation=True, max_length=self.tokenizer_max_length, return_tensors="pt"
         ).input_ids
 
+        #Multi vector Embedding support
+        indices = [i for i, input_id in enumerate(input_ids) if input_id == 49408]
+        indices.reverse()
+        for i in indices:
+            input_ids[i:i + 1] = [49408 + n for n in range(tokenizer.__len__() - 49408)]
+
         if self.tokenizer_max_length > tokenizer.model_max_length:
             input_ids = input_ids.squeeze(0)
             iids_list = []
