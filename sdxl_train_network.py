@@ -57,11 +57,11 @@ class SdxlNetworkTrainer(train_network.NetworkTrainer):
         tokenizer = sdxl_train_util.load_tokenizers(args)
         return tokenizer
 
-    def load_textual_inversion(self, args, tokenizers, text_encoders):
-        if args.textual_inversion_embeddings:
+    def load_textual_inversion(self, args, tokenizers, text_encoders, train_dataset_group):
+        if args.textual_inversion_embedding:
             token_ids_embeds1 = []
             token_ids_embeds2 = []
-            for embeds_file in args.textual_inversion_embeddings:
+            for embeds_file in args.textual_inversion_embedding:
                 if model_util.is_safetensors(embeds_file):
                     from safetensors.torch import load_file
                     data = load_file(embeds_file)
@@ -74,7 +74,9 @@ class SdxlNetworkTrainer(train_network.NetworkTrainer):
                 num_vectors_per_token = embeds1.size()[0]
                 token_string = args.textual_inversion_name or os.path.splitext(os.path.basename(embeds_file))[0]
                 token_strings = [token_string] + [f"{token_string}{i + 1}" for i in range(num_vectors_per_token - 1)]
-                self.prompt_replacement = [token_string, " ".join(token_strings)]
+                if args.num_vectors_per_token > 1:
+                    train_dataset_group.add_replacement(token_string, " ".join(token_strings))
+                    self.prompt_replacement = [token_string, " ".join(token_strings)]
                 # add new word to tokenizer, count is num_vectors_per_token
                 num_added_tokens1 = tokenizers[0].add_tokens(token_strings)
                 num_added_tokens2 = tokenizers[1].add_tokens(token_strings)

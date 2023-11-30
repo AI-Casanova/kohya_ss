@@ -106,7 +106,7 @@ class NetworkTrainer:
         tokenizer = train_util.load_tokenizer(args)
         return tokenizer
 
-    def load_textual_inversion(self, args, tokenizers, text_encoders):
+    def load_textual_inversion(self, args, tokenizers, text_encoders, train_dataset_group):
         raise NotImplementedError
 
     def is_text_encoder_outputs_cached(self, args):
@@ -234,7 +234,7 @@ class NetworkTrainer:
         text_encoders = text_encoder if isinstance(text_encoder, list) else [text_encoder]
 
         if args.textual_inversion_embedding:
-            self.load_textual_inversion(args, tokenizers, text_encoders)
+            self.load_textual_inversion(args, tokenizers, text_encoders, train_dataset_group)
 
         # モデルに xformers とか memory efficient attention を組み込む
         train_util.replace_unet_modules(unet, args.mem_eff_attn, args.xformers, args.sdpa)
