@@ -18,6 +18,8 @@ class SdxlNetworkTrainer(train_network.NetworkTrainer):
         super().__init__()
         self.vae_scale_factor = sdxl_model_util.VAE_SCALE_FACTOR
         self.is_sdxl = True
+        self.prompt_replacement = None
+
 
     def assert_extra_args(self, args, train_dataset_group):
         super().assert_extra_args(args, train_dataset_group)
@@ -72,6 +74,7 @@ class SdxlNetworkTrainer(train_network.NetworkTrainer):
                 num_vectors_per_token = embeds1.size()[0]
                 token_string = args.textual_inversion_name or os.path.splitext(os.path.basename(embeds_file))[0]
                 token_strings = [token_string] + [f"{token_string}{i + 1}" for i in range(num_vectors_per_token - 1)]
+                self.prompt_replacement = [token_string, " ".join(token_strings)]
                 # add new word to tokenizer, count is num_vectors_per_token
                 num_added_tokens1 = tokenizers[0].add_tokens(token_strings)
                 num_added_tokens2 = tokenizers[1].add_tokens(token_strings)
@@ -221,7 +224,7 @@ class SdxlNetworkTrainer(train_network.NetworkTrainer):
         return noise_pred
 
     def sample_images(self, accelerator, args, epoch, global_step, device, vae, tokenizer, text_encoder, unet):
-        sdxl_train_util.sample_images(accelerator, args, epoch, global_step, device, vae, tokenizer, text_encoder, unet)
+        sdxl_train_util.sample_images(accelerator, args, epoch, global_step, device, vae, tokenizer, text_encoder, unet, prompt_replacement=self.prompt_replacement)
 
 
 def setup_parser() -> argparse.ArgumentParser:
