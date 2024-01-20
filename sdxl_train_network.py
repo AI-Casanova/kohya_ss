@@ -74,7 +74,7 @@ class SdxlNetworkTrainer(train_network.NetworkTrainer):
                 num_vectors_per_token = embeds1.size()[0]
                 token_string = args.textual_inversion_name or os.path.splitext(os.path.basename(embeds_file))[0]
                 token_strings = [token_string] + [f"{token_string}{i + 1}" for i in range(num_vectors_per_token - 1)]
-                if args.num_vectors_per_token > 1:
+                if len(token_strings) > 1:
                     train_dataset_group.add_replacement(token_string, " ".join(token_strings))
                     self.prompt_replacement = [token_string, " ".join(token_strings)]
                 # add new word to tokenizer, count is num_vectors_per_token

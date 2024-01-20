@@ -4388,7 +4388,31 @@ def get_noise_noisy_latents_and_timesteps(args, noise_scheduler, latents):
         noise = custom_train_functions.pyramid_noise_like(
             noise, latents.device, args.multires_noise_iterations, args.multires_noise_discount
         )
+    def soft_clamp_tensor(input_tensor, threshold=0.8, boundary=4):
+        # shrinking towards the mean; will also remove outliers
+        if max(abs(input_tensor.max()), abs(input_tensor.min())) < boundary or threshold == 0:
+            return input_tensor
+        channel_dim = 1
+        threshold *= boundary
+        max_vals = input_tensor.max(channel_dim, keepdim=True)[0]
+        max_replace = ((input_tensor - threshold) / (max_vals - threshold)) * (boundary - threshold) + threshold
+        over_mask = input_tensor > threshold
+        min_vals = input_tensor.min(channel_dim, keepdim=True)[0]
+        min_replace = ((input_tensor + threshold) / (min_vals + threshold)) * (-boundary + threshold) - threshold
+        under_mask = input_tensor < -threshold
+        input_tensor = torch.where(over_mask, max_replace, torch.where(under_mask, min_replace, input_tensor))
+        return input_tensor
 
+    def center_tensor(input_tensor, channel_shift=1.0, full_shift=1.0, channels=[0, 1, 2, 3]): # pylint: disable=dangerous-default-value # noqa: B006
+        if channel_shift == 0 and full_shift == 0:
+            return input_tensor
+        print(f'HDR center:  means={input_tensor.mean(dim=(-1,-2))}')
+        input_tensor -= input_tensor.mean(dim=(-1,-2),keepdim=True) * channel_shift
+        input_tensor -= input_tensor.mean(dim=(-1,-2,-3),keepdim=True) * full_shift
+        return input_tensor
+
+    # noise = center_tensor(soft_clamp_tensor(noise))
+    # latents = center_tensor(soft_clamp_tensor(latents))
     # Sample a random timestep for each image
     b_size = latents.shape[0]
     min_timestep = 0 if args.min_timestep is None else args.min_timestep

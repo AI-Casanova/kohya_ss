@@ -798,7 +798,7 @@ class NetworkTrainer:
                     noise, noisy_latents, timesteps = train_util.get_noise_noisy_latents_and_timesteps(
                         args, noise_scheduler, latents
                     )
-
+                    print(f"Noise:: Mean: {noise.mean()} Max: {noise.abs().max()}")
                     # Predict the noise residual
                     with accelerator.autocast():
                         noise_pred = self.call_unet(

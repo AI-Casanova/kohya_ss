@@ -4,9 +4,11 @@ import math
 import os
 from multiprocessing import Value
 import toml
+from torchmetrics.functional import pairwise_cosine_similarity as pairwise
 
 from tqdm import tqdm
 import torch
+import torch.nn.functional as F
 try:
     import intel_extension_for_pytorch as ipex
     if torch.xpu.is_available():
@@ -588,6 +590,13 @@ class TextualInversionTrainer:
 
                     loss = loss.mean()  # 平均なのでbatch_sizeで割る必要なし
 
+                    for text_encoder in text_encoders:
+                        embed_weights = accelerator.unwrap_model(text_encoder).get_input_embeddings().weight.detach()
+                        text_loss = 1 - torch.topk(torch.nan_to_num(pairwise(embed_weights[token_ids],
+                                                                         embed_weights[index_no_updates])), 5)[0].mean()
+                        text_loss = text_loss * (loss / (max(loss, text_loss)*2))
+                        loss = loss + text_loss
+
                     accelerator.backward(loss)
                     if accelerator.sync_gradients and args.max_grad_norm != 0.0:
                         params_to_clip = text_encoder.get_input_embeddings().parameters()
@@ -597,6 +606,24 @@ class TextualInversionTrainer:
                     lr_scheduler.step()
                     optimizer.zero_grad(set_to_none=True)
 
+                    def gram_schmidt(vv):
+                        def projection(u, v):
+                            return (v * u).sum() / (u * u).sum() * u
+
+                        n, k = vv.shape
+                        # print(n, k)
+                        uu = torch.zeros_like(vv, device=vv.device)
+                        uu[0] = vv[0].clone()
+                        # print(uu.shape)
+                        for k in range(1, n):
+                            uk = vv[k].clone()
+                            for j in range(k):
+                                uk -= projection(vv[j].clone(), uk)
+                            uk = uk *  torch.norm(vv[k]) / torch.norm(uk)
+                            uu[k] = uk
+
+                        return uu
+
                     # Let's make sure we don't update any embedding weights besides the newly added token
                     with torch.no_grad():
                         for text_encoder, orig_embeds_params, index_no_updates in zip(
@@ -605,6 +632,17 @@ class TextualInversionTrainer:
                             accelerator.unwrap_model(text_encoder).get_input_embeddings().weight[
                                 index_no_updates
                             ] = orig_embeds_params[index_no_updates]
+                            x = accelerator.unwrap_model(text_encoder).get_input_embeddings().weight[-1:].clone()
+                            # length = x.shape[-1]
+                            x -= x.mean()
+                            x = torch.clamp(x,-x.std()*3,x.std()*3)
+                            # kernel = torch.FloatTensor([[[0.006, 0.061, 0.242, 0.383, 0.242, 0.061, 0.006]]]).to(device="cuda")
+                            # sorted, indices = torch.sort(x)
+                            # sorted = sorted.roll(length//2)
+                            # x_smooth = F.conv1d(sorted, kernel, padding=3)
+                            # x[0][indices] = x_smooth.roll(-length//2)
+                            accelerator.unwrap_model(text_encoder).get_input_embeddings().weight[-1:] = x[0]
+                            # accelerator.unwrap_model(text_encoder).get_input_embeddings().weight[-6:] = gram_schmidt(accelerator.unwrap_model(text_encoder).get_input_embeddings().weight[-6:])
 
                 # Checks if the accelerator has performed an optimization step behind the scenes
                 if accelerator.sync_gradients:
